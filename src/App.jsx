@@ -1,0 +1,47 @@
+import { useState } from 'react';
+import {
+  ArrowUpRight, BarChart3, Check, CircleAlert, Clock3, Code2, ExternalLink,
+  FileText, Globe2, Image, Link2, LoaderCircle, Search, ShieldCheck, Sparkles, Tag,
+} from 'lucide-react';
+
+const tabs = [
+  { id: 'overview', label: 'Overview', icon: BarChart3 },
+  { id: 'content', label: 'Content map', icon: FileText },
+  { id: 'links', label: 'Links', icon: Link2 },
+  { id: 'assets', label: 'Assets', icon: Image },
+];
+
+function Metric({ value, label }) { return <div className="metric"><strong>{value}</strong><span>{label}</span></div>; }
+
+function EmptyState({ onExample }) {
+  return <section className="empty-state"><div className="empty-orbit"><Globe2 size={28} strokeWidth={1.5} /></div><p className="eyebrow">Ready when you are</p><h2>Turn a URL into a useful map.</h2><p className="empty-copy">See what a page is made of: its story, structure, links, media, metadata, and technical signals.</p><button className="text-button" onClick={onExample}>Try an example <ArrowUpRight size={15} /></button></section>;
+}
+
+function Overview({ report, setActiveTab }) {
+  return <div className="overview-grid">
+    <section className="section-block narrative-block"><div className="section-heading"><div><p className="eyebrow">Page narrative</p><h2>What this page is about</h2></div><Sparkles size={18} /></div><p className="summary">{report.summary || 'No readable body copy was found on this page.'}</p><div className="tag-row">{report.keywords.slice(0, 8).map((keyword) => <span className="tag" key={keyword}><Tag size={12} />{keyword}</span>)}</div></section>
+    <section className="section-block"><div className="section-heading"><div><p className="eyebrow">Structure</p><h2>Content outline</h2></div><Code2 size={18} /></div><div className="outline-list">{report.headings.slice(0, 7).map((heading, index) => <div className={`outline-item level-${heading.level}`} key={`${heading.text}-${index}`}><span>H{heading.level}</span><p>{heading.text}</p></div>)}</div></section>
+    <section className="section-block links-preview"><div className="section-heading"><div><p className="eyebrow">Discoveries</p><h2>Link signals</h2></div><Link2 size={18} /></div><div className="link-list">{report.links.slice(0, 5).map((link, index) => <a href={link.href} target="_blank" rel="noreferrer" key={`${link.href}-${index}`}><span>{link.text || link.href}</span><ExternalLink size={14} /></a>)}</div><button className="text-button small" onClick={() => setActiveTab('links')}>See all links <ArrowUpRight size={14} /></button></section>
+    <section className="section-block technical-block"><div className="section-heading"><div><p className="eyebrow">Technical read</p><h2>Page health</h2></div><ShieldCheck size={18} /></div><div className="health-list"><div><Check size={15} /> Title present <strong>{report.title ? 'Yes' : 'No'}</strong></div><div><Check size={15} /> Description present <strong>{report.description ? 'Yes' : 'No'}</strong></div><div><Check size={15} /> Canonical URL <strong>{report.canonical ? 'Yes' : 'No'}</strong></div></div></section>
+  </div>;
+}
+
+function DetailList({ report, tab }) {
+  if (tab === 'content') return <section className="detail-section"><div className="detail-intro"><p className="eyebrow">Readable content</p><h2>Content map</h2><p>Every heading and paragraph signal found in the document, in source order.</p></div><div className="content-lines">{report.headings.map((heading, index) => <div className={`content-line level-${heading.level}`} key={`${heading.text}-${index}`}><span>H{heading.level}</span><strong>{heading.text}</strong></div>)}{report.paragraphs.slice(0, 30).map((paragraph, index) => <p key={`${paragraph.slice(0, 20)}-${index}`}>{paragraph}</p>)}</div></section>;
+  if (tab === 'links') return <section className="detail-section"><div className="detail-intro"><p className="eyebrow">Navigation & references</p><h2>Every hyperlink</h2><p>{report.links.length} links resolved from the page.</p></div><div className="table-list">{report.links.map((link, index) => <a className="table-row" href={link.href} target="_blank" rel="noreferrer" key={`${link.href}-${index}`}><span className="row-index">{String(index + 1).padStart(2, '0')}</span><span className="row-main"><strong>{link.text || 'Untitled link'}</strong><small>{link.href}</small></span><span className={`link-type ${link.internal ? 'internal' : ''}`}>{link.internal ? 'Internal' : 'External'}</span><ExternalLink size={15} /></a>)}</div></section>;
+  return <section className="detail-section"><div className="detail-intro"><p className="eyebrow">Visual inventory</p><h2>Assets & forms</h2><p>Images, videos, and interactive entry points discovered in the document.</p></div><div className="asset-grid">{report.images.map((image, index) => <a href={image.src} target="_blank" rel="noreferrer" className="asset-card" key={`${image.src}-${index}`}><div className="asset-preview"><Image size={22} /><span>{image.width && image.height ? `${image.width} × ${image.height}` : 'Image'}</span></div><strong>{image.alt || 'Untitled image'}</strong><small>{image.src}</small></a>)}{report.forms.map((form, index) => <div className="form-card" key={`${form.action}-${index}`}><div className="form-icon"><Search size={20} /></div><strong>Form {index + 1}</strong><small>{form.fields} input fields · {form.method} request</small></div>)}</div></section>;
+}
+
+export function App() {
+  const [url, setUrl] = useState(''); const [report, setReport] = useState(null); const [activeTab, setActiveTab] = useState('overview'); const [loading, setLoading] = useState(false); const [error, setError] = useState('');
+  async function analyze(targetUrl = url) { setError(''); setLoading(true); setReport(null); try { const response = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Unable to analyze this URL.'); setReport(data); } catch (analysisError) { setError(analysisError.message); } finally { setLoading(false); } }
+  function handleSubmit(event) { event.preventDefault(); analyze(); }
+  return <div className="app-shell">
+    <header className="topbar"><a className="brand" href="/"><span className="brand-mark"><Globe2 size={17} /></span><span>SITE<span className="brand-accent">/</span>SCOPE</span></a><div className="topbar-note"><span className="status-dot" /> Open web intelligence, distilled</div><div className="header-time"><Clock3 size={14} /> Live analysis</div></header>
+    <main><section className="hero"><div className="hero-copy"><p className="eyebrow">Web intelligence, without the noise</p><h1>Read the whole<br /><em>picture.</em></h1><p className="hero-text">Paste any public URL. Site Scope turns the page into a clear, detailed report you can actually use.</p></div><div className="hero-aside"><div className="signal-line"><span>01</span><div><strong>Inspect</strong><small>Structure, content & metadata</small></div></div><div className="signal-line"><span>02</span><div><strong>Connect</strong><small>Links, assets & destinations</small></div></div><div className="signal-line"><span>03</span><div><strong>Understand</strong><small>A concise narrative summary</small></div></div></div></section>
+      <section className="input-zone"><form onSubmit={handleSubmit}><div className="url-field"><Globe2 size={20} /><input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com" required /><button type="submit" disabled={loading}>{loading ? <LoaderCircle className="spin" size={18} /> : <Search size={18} />}<span>{loading ? 'Reading page' : 'Analyze URL'}</span></button></div></form><p className="input-note">Only analyze pages you have permission to access. Public HTML only.</p></section>
+      {error && <div className="error-banner"><CircleAlert size={17} /><span>{error}</span></div>}{!report && !loading && !error && <EmptyState onExample={() => { const example = 'https://example.com'; setUrl(example); analyze(example); }} />}{loading && <div className="loading-state"><LoaderCircle className="spin" size={28} /><h2>Reading the page...</h2><p>Following the document from its title to its final link.</p></div>}
+      {report && <section className="report"><div className="report-header"><div><p className="eyebrow">Analysis complete</p><h2>{report.title || report.url}</h2><a className="source-url" href={report.url} target="_blank" rel="noreferrer">{report.url} <ExternalLink size={13} /></a></div><div className="report-badge"><Check size={14} /> Scanned just now</div></div><div className="metric-strip">{[{ value: report.wordCount.toLocaleString(), label: 'Words analyzed' }, { value: report.links.length.toLocaleString(), label: 'Links found' }, { value: report.images.length.toLocaleString(), label: 'Media assets' }, { value: report.forms.length.toLocaleString(), label: 'Forms detected' }].map((metric) => <Metric {...metric} key={metric.label} />)}</div><nav className="tabs">{tabs.map(({ id, label, icon: Icon }) => <button className={activeTab === id ? 'active' : ''} onClick={() => setActiveTab(id)} key={id}><Icon size={16} />{label}</button>)}</nav>{activeTab === 'overview' ? <Overview report={report} setActiveTab={setActiveTab} /> : <DetailList report={report} tab={activeTab} />}</section>}
+    </main><footer><span>Site Scope / 2026</span><span>Built for curious minds <Sparkles size={13} /></span></footer>
+  </div>;
+}
