@@ -31,7 +31,12 @@ function buildDossier({ url, title, description, text, headings, linkCatalog }) 
   const feeWaiver = /fee waiver|waive the application fee/i.test(normalized);
   const english = firstMatch(normalized, [/(?:TOEFL|IELTS|Duolingo)[^.]{0,220}/i], 'No English proficiency detail identified');
   const funding = normalized.split(/(?<=[.!?])\s+/).filter((sentence) => /assistantship|fellowship|tuition remission|tuition waiver|research assistant|teaching assistant|stipend/i.test(sentence)).slice(0, 8);
-  const contacts = [...new Set([...normalized.matchAll(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}/g)].map((match) => match[0]).filter((name) => /coordinator|director|advisor|admissions|graduate/i.test(normalized.slice(Math.max(0, match.index - 100), match.index + 160))))].slice(0, 8).map((name) => ({ name, role_or_title: 'Contact identified in page text', email: null, profile_url: null }));
+  const contactNames = [];
+  for (const candidate of normalized.matchAll(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}/g)) {
+    const context = normalized.slice(Math.max(0, candidate.index - 100), candidate.index + candidate[0].length + 160);
+    if (/coordinator|director|advisor|admissions|graduate/i.test(context)) contactNames.push(candidate[0]);
+  }
+  const contacts = [...new Set(contactNames)].slice(0, 8).map((name) => ({ name, role_or_title: 'Contact identified in page text', email: null, profile_url: null }));
   return {
     institution_name: institution,
     department_or_school: firstMatch(normalized, [/(?:department|school|college)\s+of\s+([A-Z][\w&.' -]+)/i]),
