@@ -1,5 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
 
+.scan-profile { display:flex; align-items:center; gap:8px; margin:18px 0 0; color:var(--muted); font:10px 'DM Mono', monospace; }
+.scan-profile > span { margin-right:8px; text-transform:uppercase; }
+.scan-profile button { padding:8px 12px; color:var(--muted); border:1px solid var(--line); background:transparent; cursor:pointer; font-size:11px; }
+.scan-profile button small { display:block; margin-top:3px; color:var(--muted); font:9px 'DM Mono', monospace; }
+.scan-profile button.active { color:var(--ink); border-color:var(--orange); background:#fbe6e0; }
+.funding-evidence { display:flex; align-items:center; justify-content:space-between; gap:15px; padding:12px 0; color:var(--ink); border-bottom:1px solid #e4e1d9; text-decoration:none; font-size:12px; }
+.funding-evidence span { min-width:0; }.funding-evidence strong { display:inline-block; margin-right:9px; color:var(--green); font:9px 'DM Mono', monospace; text-transform:uppercase; }.funding-evidence span { overflow:hidden; text-overflow:ellipsis; }
+
  .scan-mode { display:flex; align-items:center; gap:8px; margin-top:14px; color:var(--muted); font:10px 'DM Mono', monospace; }
  .scan-mode > span { margin-right:8px; text-transform:uppercase; }
  .scan-mode button { display:flex; flex-direction:column; align-items:flex-start; padding:8px 12px; color:var(--muted); border:1px solid var(--line); background:transparent; cursor:pointer; font-size:11px; }
