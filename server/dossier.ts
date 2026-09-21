@@ -1,6 +1,8 @@
-const TEST_POLICIES = ['Required', 'Optional', 'Waived', 'Not Accepted', 'Not Specified'];
+import type { Dossier, Heading, LinkDirectory, Deadline } from '../src/types';
 
-function firstMatch(text, patterns, fallback = null) {
+const TEST_POLICIES = ['Required', 'Optional', 'Waived', 'Not Accepted', 'Not Specified'] as const;
+
+function firstMatch(text: string, patterns: RegExp[], fallback: string | null = null): string | null {
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) return match[1]?.trim() || match[0].trim();
@@ -8,7 +10,7 @@ function firstMatch(text, patterns, fallback = null) {
   return fallback;
 }
 
-function policyFor(text, subject) {
+function policyFor(text: string, subject: string): string {
   const relevant = text.match(new RegExp(`.{0,100}${subject}.{0,180}`, 'ig'))?.join(' ') || '';
   if (!relevant) return 'Not Specified';
   if (/not\s+(required|accepted)|does not require|no longer required/i.test(relevant)) return 'Optional';
@@ -18,11 +20,11 @@ function policyFor(text, subject) {
   return 'Not Specified';
 }
 
-function buildDossier({ url, title, description, text, headings, linkCatalog }) {
+function buildDossier({ url, title, description, text, headings, linkCatalog }: { url: string; title: string; description: string; text: string; headings: Heading[]; linkCatalog: LinkDirectory }): Dossier {
   const normalized = text.replace(/\s+/g, ' ').trim();
-  const institution = firstMatch(normalized, [/([A-Z][\w&.'-]+(?:\s+[A-Z][\w&.'-]+){1,5})\s+(?:University|College|Institute)/, /(?:at|of)\s+([A-Z][\w&.'-]+(?:\s+[A-Z][\w&.'-]+){1,5})/], 'Institution not identified');
+  const institution = firstMatch(normalized, [/([A-Z][\w&.'-]+(?:\s+[A-Z][\w&.'-]+){1,5})\s+(?:University|College|Institute)/, /(?:at|of)\s+([A-Z][\w&.'-]+(?:\s+[A-Z][\w&.'-]+){1,5})/], 'Institution not identified') || 'Institution not identified';
   const programTitle = title || headings.find((heading) => heading.level === 1)?.text || 'Program not identified';
-  const deadlines = [];
+  const deadlines: Deadline[] = [];
   const datePattern = /(Fall|Spring|Summer|Winter)?\s*(20\d{2})[^.]{0,100}?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:,\s*20\d{2})?/gi;
   for (const match of normalized.matchAll(datePattern)) deadlines.push({ term: `${match[1] || 'Application'} ${match[2]}`, category: /priority|fellowship|fund/i.test(match[0]) ? 'Priority/Funding' : /international/i.test(match[0]) ? 'General International' : 'General', date: match[0].trim(), notes: null });
   const gpa = firstMatch(normalized, [/(?:minimum|min)\s+(?:undergraduate\s+)?GPA(?:\s+of)?\s*[:\-]?\s*(\d(?:\.\d+)?)/i, /GPA\s+(?:requirement|minimum)\s*[:\-]?\s*(\d(?:\.\d+)?)/i]);
@@ -30,24 +32,24 @@ function buildDossier({ url, title, description, text, headings, linkCatalog }) 
   const fee = firstMatch(normalized, [/(?:application|admissions?)\s+fee\s*(?:is|:)?\s*(\$\s?\d+(?:\.\d{2})?)/i]);
   const feeWaiver = /fee waiver|waive the application fee/i.test(normalized);
   const english = firstMatch(normalized, [/(?:TOEFL|IELTS|Duolingo)[^.]{0,220}/i], 'No English proficiency detail identified');
-  const funding = normalized.split(/(?<=[.!?])\s+/).filter((sentence) => /assistantship|fellowship|tuition remission|tuition waiver|research assistant|teaching assistant|stipend/i.test(sentence)).slice(0, 8);
-  const contactNames = [];
+  const funding: string[] = normalized.split(/(?<=[.!?])\s+/).filter((sentence) => /assistantship|fellowship|tuition remission|tuition waiver|research assistant|teaching assistant|stipend/i.test(sentence)).slice(0, 8);
+  const contactNames: string[] = [];
   for (const candidate of normalized.matchAll(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}/g)) {
-    const context = normalized.slice(Math.max(0, candidate.index - 100), candidate.index + candidate[0].length + 160);
+    const context = normalized.slice(Math.max(0, (candidate.index ?? 0) - 100), (candidate.index ?? 0) + candidate[0].length + 160);
     if (/coordinator|director|advisor|admissions|graduate/i.test(context)) contactNames.push(candidate[0]);
   }
   const contacts = [...new Set(contactNames)].slice(0, 8).map((name) => ({ name, role_or_title: 'Contact identified in page text', email: null, profile_url: null }));
   return {
     institution_name: institution,
     department_or_school: firstMatch(normalized, [/(?:department|school|college)\s+of\s+([A-Z][\w&.' -]+)/i]),
-    program_title: programTitle,
-    degree_awarded: firstMatch(`${title} ${normalized}`, [/\b(Ph\.?D\.?|博士|M\.S\.|M\.A\.|M\.Eng\.|Master(?:'s)?|Doctor(?:ate)?|MBA)\b/i], 'Not specified'),
+    program_title: programTitle || 'Program not identified',
+    degree_awarded: firstMatch(`${title} ${normalized}`, [/\b(Ph\.?D\.?|博士|M\.S\.|M\.A\.|M\.Eng\.|Master(?:'s)?|Doctor(?:ate)?|MBA)\b/i], 'Not specified') || 'Not specified',
     executive_summary: description || normalized.slice(0, 420),
     deadlines,
     testing_requirements: {
       gre_general: policyFor(normalized, 'GRE'),
       gre_subject: policyFor(normalized, 'GRE subject'),
-      english_proficiency: english,
+      english_proficiency: english || 'No English proficiency detail identified',
       waiver_details: firstMatch(normalized, [/(?:TOEFL|IELTS|Duolingo)[^.]{0,260}(?:waiv|exempt)[^.]*\./i]),
     },
     admissions_criteria: {

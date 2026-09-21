@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { analyzePage } from './scraper.js';
+import type { PageReport, ScanMode } from '../src/types';
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -22,7 +23,7 @@ function crawlCandidates(report) {
 
 function toMarkdown(report) {
   const dossier = report.dossier;
-  return `# ${dossier.program_title}\n\nSource: ${report.url}\n\n## Executive summary\n${dossier.executive_summary}\n\n## Admissions criteria\n- Minimum GPA: ${dossier.admissions_criteria.minimum_gpa || 'Not identified'}\n- Recommendation letters: ${dossier.admissions_criteria.letters_of_recommendation || 'Not identified'}\n- Application fee: ${dossier.admissions_criteria.application_fee || 'Not identified'}\n- Fee waiver available: ${dossier.admissions_criteria.fee_waiver_available ? 'Yes' : 'Not identified'}\n\n## Testing\n- GRE general: ${dossier.testing_requirements.gre_general}\n- GRE subject: ${dossier.testing_requirements.gre_subject}\n- English proficiency: ${dossier.testing_requirements.english_proficiency}\n\n## Deadlines\n${dossier.deadlines.map((item) => `- ${item.category}: ${item.date} (${item.term})`).join('\n') || '- No dates identified'}\n\n## Funding\n${dossier.funding_and_assistantships.map((item) => `- ${item}`).join('\n') || '- No funding signals identified'}\n\n## Link directory\n${Object.entries(dossier.link_directory).map(([key, values]) => `### ${key}\n${values.map((value) => `- ${value}`).join('\n') || '- None identified'}`).join('\n\n')}`;
+  return `# ${dossier.program_title}\n\nSource: ${report.url}\n\n## Executive summary\n${dossier.executive_summary}\n\n## Admissions criteria\n- Minimum GPA: ${dossier.admissions_criteria.minimum_gpa || 'Not identified'}\n- Recommendation letters: ${dossier.admissions_criteria.letters_of_recommendation || 'Not identified'}\n- Application fee: ${dossier.admissions_criteria.application_fee || 'Not identified'}\n- Fee waiver available: ${dossier.admissions_criteria.fee_waiver_available ? 'Yes' : 'Not identified'}\n\n## Testing\n- GRE general: ${dossier.testing_requirements.gre_general}\n- GRE subject: ${dossier.testing_requirements.gre_subject}\n- English proficiency: ${dossier.testing_requirements.english_proficiency}\n\n## Deadlines\n${dossier.deadlines.map((item) => `- ${item.category}: ${item.date} (${item.term})`).join('\n') || '- No dates identified'}\n\n## Funding\n${dossier.funding_and_assistantships.map((item) => `- ${item}`).join('\n') || '- No funding signals identified'}\n\n## Link directory\n${(Object.entries(dossier.link_directory) as Array<[string, string[]]>).map(([key, values]) => `### ${key}\n${values.map((value) => `- ${value}`).join('\n') || '- None identified'}`).join('\n\n')}`;
 }
 
 function toCsv(report) {
@@ -35,8 +36,8 @@ app.post('/api/analyze', async (request, response) => {
   if (!isSafeUrl(url)) return response.status(400).json({ error: 'Please enter a public HTTP or HTTPS URL.' });
   try {
     const root = await analyzePage(url);
-    let report = root;
-    let crawledPages = [];
+    let report: PageReport = root;
+    let crawledPages: PageReport[] = [];
     if (mode === 'deep') {
       const candidates = crawlCandidates(root);
       crawledPages = await Promise.all(candidates.map(async (candidate) => { try { return await analyzePage(candidate, { rendered: false }); } catch { return null; } })).then((pages) => pages.filter(Boolean));
@@ -46,7 +47,7 @@ app.post('/api/analyze', async (request, response) => {
       report = { ...root, paragraphs: [...root.paragraphs, ...crawledPages.flatMap((page) => page.paragraphs)], headings: [...root.headings, ...crawledPages.flatMap((page) => page.headings)], links: [...new Map(mergedLinks.filter((link) => link.href).map((link) => [link.href, link])).values()], wordCount: root.wordCount + crawledPages.reduce((sum, page) => sum + page.wordCount, 0), dossier: mergedDossier };
     }
     return response.json({ ...report, mode, crawledPages: crawledPages.map((page) => ({ url: page.url, title: page.title })) });
-  } catch (error) { return response.status(502).json({ error: error.message || 'We could not analyze that page.' }); }
+  } catch (error) { return response.status(502).json({ error: error instanceof Error ? error.message : 'We could not analyze that page.' }); }
 });
 
 app.post('/api/export', (request, response) => {

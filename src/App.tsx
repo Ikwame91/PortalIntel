@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { PageReport, ScanMode } from './types';
 import {
   ArrowUpRight, BarChart3, Check, CircleAlert, Clock3, Code2, Download, ExternalLink,
   FileText, Globe2, Image, Link2, LoaderCircle, Search, ShieldCheck, Sparkles, Tag,
@@ -42,8 +43,8 @@ function Dossier({ report }) {
 }
 
 export function App() {
-  const [url, setUrl] = useState(''); const [report, setReport] = useState(null); const [activeTab, setActiveTab] = useState('overview'); const [mode, setMode] = useState('quick'); const [loading, setLoading] = useState(false); const [error, setError] = useState('');
-  async function analyze(targetUrl = url) { setError(''); setLoading(true); setReport(null); try { const response = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl, mode }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Unable to analyze this URL.'); setReport(data); } catch (analysisError) { setError(analysisError.message); } finally { setLoading(false); } }
+  const [url, setUrl] = useState(''); const [report, setReport] = useState<PageReport | null>(null); const [activeTab, setActiveTab] = useState('overview'); const [mode, setMode] = useState<ScanMode>('quick'); const [loading, setLoading] = useState(false); const [error, setError] = useState('');
+  async function analyze(targetUrl = url) { setError(''); setLoading(true); setReport(null); try { const response = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: targetUrl, mode }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Unable to analyze this URL.'); setReport(data as PageReport); } catch (analysisError) { setError(analysisError instanceof Error ? analysisError.message : 'Unable to analyze this URL.'); } finally { setLoading(false); } }
   async function exportReport(format) { const response = await fetch('/api/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ report, format }) }); const blob = await response.blob(); const downloadUrl = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = downloadUrl; anchor.download = `site-scope-dossier.${format}`; anchor.click(); URL.revokeObjectURL(downloadUrl); }
   function handleSubmit(event) { event.preventDefault(); analyze(); }
   return <div className="app-shell">
