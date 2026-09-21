@@ -1,7 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { analyzePage } from './scraper.js';
-import type { PageReport, ScanMode } from '../src/types';
+import type { PageReport, ScanProfile } from '../src/types';
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -17,8 +17,15 @@ function isSafeUrl(value) {
   } catch { return false; }
 }
 
-function crawlCandidates(report) {
-  return report.links.filter((link) => link.internal && /admissions|requirement|deadline|application|graduate|program/i.test(`${link.text} ${link.href}`)).slice(0, 5).map((link) => link.href);
+function crawlCandidates(report: PageReport, profile: ScanProfile): string[] {
+  const pattern = profile === 'graduate'
+    ? /funding|financial|assistantship|fellowship|tuition|stipend|aid|admissions|requirement|deadline|application|graduate|program/i
+    : /admissions|requirement|deadline|application|graduate|program/i;
+  return report.links.filter((link) => link.internal && link.href && pattern.test(`${link.text} ${link.href}`)).sort((left, right) => {
+    const leftFunding = /funding|financial|assistantship|fellowship|tuition|stipend|aid/i.test(`${left.text} ${left.href}`);
+    const rightFunding = /funding|financial|assistantship|fellowship|tuition|stipend|aid/i.test(`${right.text} ${right.href}`);
+    return Number(rightFunding) - Number(leftFunding);
+  }).slice(0, profile === 'graduate' ? 8 : 5).map((link) => link.href as string);
 }
 
 function toMarkdown(report) {
@@ -32,21 +39,21 @@ function toCsv(report) {
 }
 
 app.post('/api/analyze', async (request, response) => {
-  const { url, mode = 'quick' } = request.body || {};
+  const { url, mode = 'quick', profile = 'general' } = request.body || {};
   if (!isSafeUrl(url)) return response.status(400).json({ error: 'Please enter a public HTTP or HTTPS URL.' });
   try {
     const root = await analyzePage(url);
     let report: PageReport = root;
     let crawledPages: PageReport[] = [];
     if (mode === 'deep') {
-      const candidates = crawlCandidates(root);
-      crawledPages = await Promise.all(candidates.map(async (candidate) => { try { return await analyzePage(candidate, { rendered: false }); } catch { return null; } })).then((pages) => pages.filter(Boolean));
+      const candidates = crawlCandidates(root, profile);
+      crawledPages = await Promise.all(candidates.map(async (candidate) => { try { return await analyzePage(candidate, { rendered: false }); } catch { return null; } })).then((pages) => pages.filter((page): page is PageReport => page !== null));
       const mergedText = [root.summary, ...crawledPages.map((page) => page.summary)].filter(Boolean).join(' ');
       const mergedLinks = [...root.links, ...crawledPages.flatMap((page) => page.links)];
-      const mergedDossier = { ...root.dossier, executive_summary: mergedText.slice(0, 700), deadlines: [...root.dossier.deadlines, ...crawledPages.flatMap((page) => page.dossier.deadlines)], funding_and_assistantships: [...new Set([...root.dossier.funding_and_assistantships, ...crawledPages.flatMap((page) => page.dossier.funding_and_assistantships)])], link_directory: { ...root.dossier.link_directory, application_portal_links: [...new Set([...root.dossier.link_directory.application_portal_links, ...crawledPages.flatMap((page) => page.dossier.link_directory.application_portal_links)])], document_downloads: [...new Set([...root.dossier.link_directory.document_downloads, ...crawledPages.flatMap((page) => page.dossier.link_directory.document_downloads)])] } };
+      const mergedDossier = { ...root.dossier, executive_summary: mergedText.slice(0, 700), deadlines: [...root.dossier.deadlines, ...crawledPages.flatMap((page) => page.dossier.deadlines)], funding_and_assistantships: [...new Set([...root.dossier.funding_and_assistantships, ...crawledPages.flatMap((page) => page.dossier.funding_and_assistantships)])], funding_evidence: [...root.dossier.funding_evidence, ...crawledPages.flatMap((page) => page.dossier.funding_evidence)], link_directory: { ...root.dossier.link_directory, application_portal_links: [...new Set([...root.dossier.link_directory.application_portal_links, ...crawledPages.flatMap((page) => page.dossier.link_directory.application_portal_links)])], document_downloads: [...new Set([...root.dossier.link_directory.document_downloads, ...crawledPages.flatMap((page) => page.dossier.link_directory.document_downloads)])], financial_aid_links: [...new Set([...root.dossier.link_directory.financial_aid_links, ...crawledPages.flatMap((page) => page.dossier.link_directory.financial_aid_links)])] } };
       report = { ...root, paragraphs: [...root.paragraphs, ...crawledPages.flatMap((page) => page.paragraphs)], headings: [...root.headings, ...crawledPages.flatMap((page) => page.headings)], links: [...new Map(mergedLinks.filter((link) => link.href).map((link) => [link.href, link])).values()], wordCount: root.wordCount + crawledPages.reduce((sum, page) => sum + page.wordCount, 0), dossier: mergedDossier };
     }
-    return response.json({ ...report, mode, crawledPages: crawledPages.map((page) => ({ url: page.url, title: page.title })) });
+    return response.json({ ...report, mode, profile, crawledPages: crawledPages.map((page) => ({ url: page.url, title: page.title })) });
   } catch (error) { return response.status(502).json({ error: error instanceof Error ? error.message : 'We could not analyze that page.' }); }
 });
 

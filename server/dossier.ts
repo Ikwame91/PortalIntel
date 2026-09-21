@@ -1,4 +1,4 @@
-import type { Dossier, Heading, LinkDirectory, Deadline } from '../src/types';
+import type { Dossier, Heading, LinkDirectory, Deadline, FundingEvidence } from '../src/types';
 
 const TEST_POLICIES = ['Required', 'Optional', 'Waived', 'Not Accepted', 'Not Specified'] as const;
 
@@ -20,6 +20,15 @@ function policyFor(text: string, subject: string): string {
   return 'Not Specified';
 }
 
+function fundingKind(sentence: string): FundingEvidence['kind'] {
+  if (/assistantship|research assistant|teaching assistant/i.test(sentence)) return 'assistantship';
+  if (/fellowship/i.test(sentence)) return 'fellowship';
+  if (/tuition/i.test(sentence)) return 'tuition';
+  if (/stipend/i.test(sentence)) return 'stipend';
+  if (/fee waiver/i.test(sentence)) return 'fee waiver';
+  return 'other';
+}
+
 function buildDossier({ url, title, description, text, headings, linkCatalog }: { url: string; title: string; description: string; text: string; headings: Heading[]; linkCatalog: LinkDirectory }): Dossier {
   const normalized = text.replace(/\s+/g, ' ').trim();
   const institution = firstMatch(normalized, [/([A-Z][\w&.'-]+(?:\s+[A-Z][\w&.'-]+){1,5})\s+(?:University|College|Institute)/, /(?:at|of)\s+([A-Z][\w&.'-]+(?:\s+[A-Z][\w&.'-]+){1,5})/], 'Institution not identified') || 'Institution not identified';
@@ -33,6 +42,7 @@ function buildDossier({ url, title, description, text, headings, linkCatalog }: 
   const feeWaiver = /fee waiver|waive the application fee/i.test(normalized);
   const english = firstMatch(normalized, [/(?:TOEFL|IELTS|Duolingo)[^.]{0,220}/i], 'No English proficiency detail identified');
   const funding: string[] = normalized.split(/(?<=[.!?])\s+/).filter((sentence) => /assistantship|fellowship|tuition remission|tuition waiver|research assistant|teaching assistant|stipend/i.test(sentence)).slice(0, 8);
+  const fundingEvidence: FundingEvidence[] = funding.map((sentence) => ({ text: sentence, sourceUrl: url, kind: fundingKind(sentence) }));
   const contactNames: string[] = [];
   for (const candidate of normalized.matchAll(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}/g)) {
     const context = normalized.slice(Math.max(0, (candidate.index ?? 0) - 100), (candidate.index ?? 0) + candidate[0].length + 160);
@@ -62,6 +72,7 @@ function buildDossier({ url, title, description, text, headings, linkCatalog }: 
       fee_waiver_instructions: feeWaiver ? firstMatch(normalized, [/fee waiver[^.]{0,260}/i]) : null,
     },
     funding_and_assistantships: funding,
+    funding_evidence: fundingEvidence,
     identified_contacts: contacts,
     link_directory: linkCatalog,
     source_url: url,
