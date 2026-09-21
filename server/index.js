@@ -1,44 +1,61 @@
 import cors from 'cors';
 import express from 'express';
-import * as cheerio from 'cheerio';
+import { analyzePage } from './scraper.js';
 
 const app = express();
 const port = process.env.PORT || 3001;
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
-function cleanText(value = '') { return value.replace(/\s+/g, ' ').trim(); }
 function isSafeUrl(value) {
-  try { const parsed = new URL(value); return ['http:', 'https:'].includes(parsed.protocol); } catch { return false; }
+  try {
+    const parsed = new URL(value);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    const host = parsed.hostname.toLowerCase();
+    return !['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(host) && !/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.)/.test(host);
+  } catch { return false; }
+}
+
+function crawlCandidates(report) {
+  return report.links.filter((link) => link.internal && /admissions|requirement|deadline|application|graduate|program/i.test(`${link.text} ${link.href}`)).slice(0, 5).map((link) => link.href);
+}
+
+function toMarkdown(report) {
+  const dossier = report.dossier;
+  return `# ${dossier.program_title}\n\nSource: ${report.url}\n\n## Executive summary\n${dossier.executive_summary}\n\n## Admissions criteria\n- Minimum GPA: ${dossier.admissions_criteria.minimum_gpa || 'Not identified'}\n- Recommendation letters: ${dossier.admissions_criteria.letters_of_recommendation || 'Not identified'}\n- Application fee: ${dossier.admissions_criteria.application_fee || 'Not identified'}\n- Fee waiver available: ${dossier.admissions_criteria.fee_waiver_available ? 'Yes' : 'Not identified'}\n\n## Testing\n- GRE general: ${dossier.testing_requirements.gre_general}\n- GRE subject: ${dossier.testing_requirements.gre_subject}\n- English proficiency: ${dossier.testing_requirements.english_proficiency}\n\n## Deadlines\n${dossier.deadlines.map((item) => `- ${item.category}: ${item.date} (${item.term})`).join('\n') || '- No dates identified'}\n\n## Funding\n${dossier.funding_and_assistantships.map((item) => `- ${item}`).join('\n') || '- No funding signals identified'}\n\n## Link directory\n${Object.entries(dossier.link_directory).map(([key, values]) => `### ${key}\n${values.map((value) => `- ${value}`).join('\n') || '- None identified'}`).join('\n\n')}`;
+}
+
+function toCsv(report) {
+  const rows = [['category', 'value'], ['program', report.dossier.program_title], ['institution', report.dossier.institution_name], ['minimum_gpa', report.dossier.admissions_criteria.minimum_gpa || ''], ['application_fee', report.dossier.admissions_criteria.application_fee || ''], ...report.dossier.deadlines.map((deadline) => ['deadline', `${deadline.category}: ${deadline.date}`]), ...report.dossier.funding_and_assistantships.map((funding) => ['funding', funding])];
+  return rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(',')).join('\n');
 }
 
 app.post('/api/analyze', async (request, response) => {
-  const { url } = request.body || {};
-  if (!isSafeUrl(url)) return response.status(400).json({ error: 'Please enter a complete HTTP or HTTPS URL.' });
+  const { url, mode = 'quick' } = request.body || {};
+  if (!isSafeUrl(url)) return response.status(400).json({ error: 'Please enter a public HTTP or HTTPS URL.' });
   try {
-    const page = await fetch(url, { headers: { 'User-Agent': 'SiteScope/1.0 (+page analysis)' }, signal: AbortSignal.timeout(15000) });
-    if (!page.ok) return response.status(502).json({ error: `The site responded with ${page.status}. Try another public page.` });
-    const html = await page.text();
-    const $ = cheerio.load(html);
-    const pageUrl = new URL(url);
-    const links = $('a[href]').map((_, element) => {
-      const rawHref = $(element).attr('href');
-      try {
-        const href = new URL(rawHref, url).href;
-        return { href, text: cleanText($(element).text()), internal: new URL(href).hostname === pageUrl.hostname };
-      } catch { return null; }
-    }).get().filter(Boolean);
-    const headings = $('h1, h2, h3, h4, h5, h6').map((_, element) => ({ level: Number(element.tagName.slice(1)), text: cleanText($(element).text()) })).get().filter((heading) => heading.text);
-    const paragraphs = $('p').map((_, element) => cleanText($(element).text())).get().filter((paragraph) => paragraph.length > 20);
-    const images = $('img').map((_, element) => ({ src: $(element).attr('src') ? new URL($(element).attr('src'), url).href : '', alt: cleanText($(element).attr('alt')), width: $(element).attr('width') || '', height: $(element).attr('height') || '' })).get().filter((image) => image.src);
-    const forms = $('form').map((_, element) => ({ action: $(element).attr('action') || pageUrl.href, method: ($(element).attr('method') || 'GET').toUpperCase(), fields: $(element).find('input, textarea, select').length })).get();
-    const bodyText = cleanText($('body').text());
-    const keywords = [...new Set((cleanText($('meta[name="keywords"]').attr('content')) || bodyText).toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 4))].slice(0, 12);
-    return response.json({ url, title: cleanText($('title').first().text()), description: cleanText($('meta[name="description"]').attr('content')), canonical: Boolean($('link[rel="canonical"]').attr('href')), summary: paragraphs.slice(0, 3).join(' '), headings, paragraphs, links, images, forms, keywords, wordCount: bodyText ? bodyText.split(/\s+/).length : 0 });
-  } catch (error) {
-    const message = error.name === 'TimeoutError' ? 'The site took too long to respond.' : 'We could not fetch that page. Check the URL and try again.';
-    return response.status(502).json({ error: message });
-  }
+    const root = await analyzePage(url);
+    let report = root;
+    let crawledPages = [];
+    if (mode === 'deep') {
+      const candidates = crawlCandidates(root);
+      crawledPages = await Promise.all(candidates.map(async (candidate) => { try { return await analyzePage(candidate, { rendered: false }); } catch { return null; } })).then((pages) => pages.filter(Boolean));
+      const mergedText = [root.summary, ...crawledPages.map((page) => page.summary)].filter(Boolean).join(' ');
+      const mergedLinks = [...root.links, ...crawledPages.flatMap((page) => page.links)];
+      const mergedDossier = { ...root.dossier, executive_summary: mergedText.slice(0, 700), deadlines: [...root.dossier.deadlines, ...crawledPages.flatMap((page) => page.dossier.deadlines)], funding_and_assistantships: [...new Set([...root.dossier.funding_and_assistantships, ...crawledPages.flatMap((page) => page.dossier.funding_and_assistantships)])], link_directory: { ...root.dossier.link_directory, application_portal_links: [...new Set([...root.dossier.link_directory.application_portal_links, ...crawledPages.flatMap((page) => page.dossier.link_directory.application_portal_links)])], document_downloads: [...new Set([...root.dossier.link_directory.document_downloads, ...crawledPages.flatMap((page) => page.dossier.link_directory.document_downloads)])] } };
+      report = { ...root, paragraphs: [...root.paragraphs, ...crawledPages.flatMap((page) => page.paragraphs)], headings: [...root.headings, ...crawledPages.flatMap((page) => page.headings)], links: [...new Map(mergedLinks.filter((link) => link.href).map((link) => [link.href, link])).values()], wordCount: root.wordCount + crawledPages.reduce((sum, page) => sum + page.wordCount, 0), dossier: mergedDossier };
+    }
+    return response.json({ ...report, mode, crawledPages: crawledPages.map((page) => ({ url: page.url, title: page.title })) });
+  } catch (error) { return response.status(502).json({ error: error.message || 'We could not analyze that page.' }); }
+});
+
+app.post('/api/export', (request, response) => {
+  const { report, format = 'md' } = request.body || {};
+  if (!report) return response.status(400).json({ error: 'A report is required.' });
+  const isCsv = format === 'csv';
+  response.setHeader('Content-Type', isCsv ? 'text/csv' : 'text/markdown');
+  response.setHeader('Content-Disposition', `attachment; filename="site-scope-dossier.${isCsv ? 'csv' : 'md'}"`);
+  return response.send(isCsv ? toCsv(report) : toMarkdown(report));
 });
 
 app.listen(port, () => console.log(`Site Scope API listening on http://localhost:${port}`));
